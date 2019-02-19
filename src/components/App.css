@@ -20,6 +20,20 @@ body {
     padding-right: 10px;
 }
 
+@media screen and (max-width: 800px) {
+    .titlebar-name {
+        width: 100%;
+        text-align: center;
+    }
+    .react-grid-item {
+        width: 100% !important;
+        height: 390px !important;
+        position: relative !important;
+        transform: none !important;
+        margin: 0 auto 10px auto !important;
+    }
+}
+
 /* plugin TODO */
 
 table.pivot * {
