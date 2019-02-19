@@ -121,7 +121,7 @@
     },
     "proxy": {
         "/dhis-web-core-resource": {
-            "target": "http://localhost:8080"
+            "target": "https://play.dhis2.org/dev"
         }
     },
     "jest": {
