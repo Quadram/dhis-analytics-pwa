@@ -48,6 +48,7 @@ const styles = {
     titleBar: {
         display: 'flex',
         alignItems: 'flex-start',
+        flexWrap: 'wrap',
     },
     titleBarIcon: {
         marginLeft: 5,
@@ -115,7 +116,7 @@ class ViewTitleBar extends Component {
         const titleStyle = Object.assign({}, style.title, {
             cursor: 'default',
             userSelect: 'text',
-            top: '7px',
+            // top: '7px',
         });
 
         const StarIcon = starred ? Star : StarBorder;
@@ -123,7 +124,9 @@ class ViewTitleBar extends Component {
         return (
             <Fragment>
                 <div className={classes.titleBar}>
-                    <span style={titleStyle}>{name}</span>
+                    <div className="titlebar-name">
+                        <span style={titleStyle}>{name}</span>
+                    </div>
                     <div className={classes.actions}>
                         <div
                             className={classes.titleBarIcon}
