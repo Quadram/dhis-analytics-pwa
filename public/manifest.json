@@ -3,12 +3,12 @@
   "short_name": "dhis2-analyt",
   "icons": [
     {
-      "src": "/img/icons/dhis-logo-downloaded-192x192.png",
+      "src": "img/icons/dhis-logo-downloaded-192x192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "/img/icons/dhis-logo-downloaded_512x512.png",
+      "src": "img/icons/dhis-logo-downloaded_512x512.png",
       "sizes": "512x512",
       "type": "image/png"
     }
