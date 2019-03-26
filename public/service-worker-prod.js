@@ -224,16 +224,28 @@ async function getKey(key) {
 
 function setKey(key, value) {
     console.log('%c SETTING DATA... ', 'background: #ff0; color: #000');
-    value.json().then(data => {
-        console.log('%c Tenemos JSON ', 'background: #0f0; color: #000');
-        let tx = withStore('readwrite', store => {
-            store.put(data, key);
+    value
+        .json()
+        .then(data => {
+            console.log('%c Tenemos JSON ', 'background: #0f0; color: #000');
+            let tx = withStore('readwrite', store => {
+                store.put(data, key);
+            });
+            if (tx.complete) {
+                console.log('DATA STORED', 'background: #0f0; color: #000');
+            }
+            return tx.complete;
+        })
+        .catch(err => {
+            console.error(err.toString());
         });
-        if (tx.complete) {
-            console.log('DATA STORED', 'background: #0f0; color: #000');
-        }
-        return tx.complete;
+    let tx = withStore('readwrite', store => {
+        store.put(value, key);
     });
+    if (tx.complete) {
+        console.log('DATA STORED after ERROR', 'background: #0f0; color: #000');
+    }
+    return tx.complete;
 }
 
 function deleteKey(key) {

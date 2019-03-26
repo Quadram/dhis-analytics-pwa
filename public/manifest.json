@@ -13,8 +13,8 @@
       "type": "image/png"
     }
   ],
-  "start_url": "android-dev/dhis-web-dashboard/",
+  "start_url": "/android-dev/dhis-web-dashboard/",
   "display": "standalone",
-  "background_color": "#000000",
+  "background_color": "#ffffff",
   "theme_color": "#1d5288"
 }
