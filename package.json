@@ -121,7 +121,7 @@
     },
     "proxy": {
         "/dhis-web-core-resource": {
-            "target": "https://play.dhis2.org/android-dev"
+            "target": "https://play.dhis2.org/dev"
         }
     },
     "jest": {
