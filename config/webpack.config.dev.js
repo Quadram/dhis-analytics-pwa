@@ -34,7 +34,7 @@ try {
     // Failed to load config file - use default config
     console.warn(`\nWARNING! Failed to load DHIS config:`, e.message);
     dhisConfig = {
-        baseUrl: 'https://play.dhis2.org/android-dev',
+        baseUrl: 'https://play.dhis2.org/dev',
         authorization: 'Basic YWRtaW46ZGlzdHJpY3Q=', // admin:district
     };
 }
