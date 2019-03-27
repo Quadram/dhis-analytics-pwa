@@ -104,65 +104,69 @@ self.addEventListener('fetch', function(event) {
                             );
                         }
                         return networkResponse || cacheResponse;
-                    }
-                    console.log(
-                        '%c THERE IS NO DATA FROM CACHE [' +
-                            event.request.url +
-                            '] ',
-                        'background: #f00; color: #ff0'
-                    );
-                    DBResponse = await getKey(event.request.url);
-                    if (DBResponse) {
+                    } else {
                         console.log(
-                            '%c DATA FROM DB AVAILABLE [' +
+                            '%c THERE IS NO DATA FROM CACHE [' +
                                 event.request.url +
                                 '] ',
-                            'background: #0f0; color: #000'
+                            'background: #f00; color: #ff0'
                         );
-                        networkResponse = await getNetworkResponse(
-                            event.request
-                        );
-                        if (networkResponse) {
-                            await setDBResponse(
-                                event.request.url,
-                                networkResponse.clone(),
-                                event
+                        DBResponse = await getKey(event.request.url);
+                        if (DBResponse) {
+                            console.log(
+                                '%c DATA FROM DB AVAILABLE [' +
+                                    event.request.url +
+                                    '] ',
+                                'background: #0f0; color: #000'
                             );
-                        }
-                        return networkResponse || DBResponse;
-                    }
-                    console.log(
-                        '%c THERE IS NO DATA FROM DB [' +
-                            event.request.url +
-                            '] ',
-                        'background: #f00; color: #ff0'
-                    );
-                    networkResponse = await getNetworkResponse(event.request);
-                    if (networkResponse) {
-                        console.log(
-                            '%c HAY NETWORK RESPONSE ',
-                            'background: #0f0; color: #000'
-                        );
-                        if (cacheResponse) {
-                            await setCacheResponse(
-                                event.request,
-                                networkResponse.clone(),
-                                CACHE_NAME,
-                                event
+                            networkResponse = await getNetworkResponse(
+                                event.request
                             );
+                            if (networkResponse) {
+                                await setDBResponse(
+                                    event.request.url,
+                                    networkResponse.clone(),
+                                    event
+                                );
+                            }
+                            return networkResponse || DBResponse;
                         } else {
-                            await setDBResponse(
-                                event.request.url,
-                                networkResponse.clone(),
-                                event
+                            console.log(
+                                '%c THERE IS NO DATA FROM DB [' +
+                                    event.request.url +
+                                    '] ',
+                                'background: #f00; color: #ff0'
                             );
+                            networkResponse = await getNetworkResponse(
+                                event.request
+                            );
+                            if (networkResponse) {
+                                console.log(
+                                    '%c HAY NETWORK RESPONSE ',
+                                    'background: #0f0; color: #000'
+                                );
+                                if (cacheResponse) {
+                                    await setCacheResponse(
+                                        event.request,
+                                        networkResponse.clone(),
+                                        CACHE_NAME,
+                                        event
+                                    );
+                                } else {
+                                    await setDBResponse(
+                                        event.request.url,
+                                        networkResponse.clone(),
+                                        event
+                                    );
+                                }
+                            }
+                            console.log(
+                                '%cXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
+                                'background: #000; color: #fff'
+                            );
+                            return networkResponse;
                         }
                     }
-                    console.log(
-                        '%cXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
-                        'background: #000; color: #fff'
-                    );
-                    return networkResponse;
                 } else {
                     console.log(
                         '%c INDEXED_DB NOT SUPPORTED ',
@@ -217,6 +221,7 @@ async function getKey(key) {
     return new Promise((resolve, reject) => {
         withStore('readonly', store => {
             req = store.get(key);
+        }).then(() => {
             resolve(req.result);
         });
     });
