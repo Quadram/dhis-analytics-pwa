@@ -79,7 +79,11 @@ self.addEventListener('install', function(event) {
 // When the webpage goes to fetch files, we intercept that request and serve up the matching files
 // if we have them
 self.addEventListener('fetch', function(event) {
-    if (doCache) {
+    if (
+        doCache &&
+        event.request.url.indexOf('http') === 0 &&
+        !(event.request.method === 'POST')
+    ) {
         console.log(
             '%c [Service Worker] Fetch [' + event.request.url + '] ',
             'background: #aaa; color: #fff'
@@ -126,7 +130,8 @@ self.addEventListener('fetch', function(event) {
                             event.waitUntil(
                                 setKey(
                                     event.request.url,
-                                    networkResponse.clone()
+                                    networkResponse.clone(),
+                                    event
                                 )
                             );
                         }
@@ -222,30 +227,32 @@ async function getKey(key) {
     return req.result;
 }
 
-function setKey(key, value) {
+async function setKey(key, value, event) {
     console.log('%c SETTING DATA... ', 'background: #ff0; color: #000');
-    value
-        .json()
-        .then(data => {
-            console.log('%c Tenemos JSON ', 'background: #0f0; color: #000');
-            let tx = withStore('readwrite', store => {
-                store.put(data, key);
-            });
-            if (tx.complete) {
-                console.log('DATA STORED', 'background: #0f0; color: #000');
-            }
-            return tx.complete;
-        })
-        .catch(err => {
-            console.error(err.toString());
-        });
-    let tx = withStore('readwrite', store => {
-        store.put(value, key);
+    return new Promise(resolve => {
+        value
+            .clone()
+            .json()
+            .then(data => {
+                console.log('DATA: ', data);
+                console.log(
+                    '%c Tenemos JSON ',
+                    'background: #0f0; color: #000'
+                );
+                let tx = withStore('readwrite', store => {
+                    store.put(data, key);
+                });
+                if (tx.complete) {
+                    console.log('DATA STORED', 'background: #0f0; color: #000');
+                }
+                resolve(tx.complete);
+            })
+            .catch(
+                caches.open(CACHE_NAME).then(cache => {
+                    resolve(cache.put(event.request, value.clone()));
+                })
+            );
     });
-    if (tx.complete) {
-        console.log('DATA STORED after ERROR', 'background: #0f0; color: #000');
-    }
-    return tx.complete;
 }
 
 function deleteKey(key) {
