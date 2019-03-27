@@ -95,6 +95,10 @@ self.addEventListener('fetch', function(event) {
         event.request.url.indexOf('http') === 0 &&
         !(event.request.method === 'POST')
     ) {
+        let isOnline = false;
+        let networkResponse = null;
+        let cacheResponse = null;
+        let DBResponse = null;
         console.log(
             '%c [Service Worker] Fetch [' + event.request.url + '] ',
             'background: #aaa; color: #fff'
@@ -102,85 +106,79 @@ self.addEventListener('fetch', function(event) {
         event.respondWith(
             (async function() {
                 if (self.indexedDB) {
-                    let cacheResponse = null;
-                    caches.match(event.request).then(function(response) {
-                        if (response) {
-                            console.log(
-                                '%c FILE FROM CACHE => ' +
-                                    event.request.url +
-                                    ' [' +
-                                    !!response +
-                                    '] ',
-                                'background: #0f0; color: #000'
-                            );
-                            cacheResponse = response;
-                        }
-                    });
-                    const networkResponse = await fetch(event.request).catch(
-                        () => {
-                            console.log(
-                                '%c NO INTERNEEEEEEEETTT ',
-                                'background: #f00; color: #000'
+                    cacheResponse = await getCacheResponse(event.request);
+                    if (cacheResponse) {
+                        networkResponse = await getNetworkResponse(
+                            event.request
+                        );
+                        if (networkResponse) {
+                            await setCacheResponse(
+                                event.request,
+                                networkResponse.clone(),
+                                CACHE_NAME,
+                                event
                             );
                         }
+                        return networkResponse || cacheResponse;
+                    }
+                    console.log(
+                        '%c THERE IS NO DATA FROM CACHE [' +
+                            event.request.url +
+                            '] ',
+                        'background: #f00; color: #ff0'
                     );
+                    DBResponse = await getKey(event.request.url);
+                    if (DBResponse) {
+                        console.log(
+                            '%c DATA FROM DB AVAILABLE [' +
+                                event.request.url +
+                                '] ',
+                            'background: #0f0; color: #000'
+                        );
+                        networkResponse = await getNetworkResponse(
+                            event.request
+                        );
+                        if (networkResponse) {
+                            await setDBResponse(
+                                event.request.url,
+                                networkResponse.clone(),
+                                event
+                            );
+                        }
+                        return networkResponse || DBResponse;
+                    }
+                    console.log(
+                        '%c THERE IS NO DATA FROM DB [' +
+                            event.request.url +
+                            '] ',
+                        'background: #f00; color: #ff0'
+                    );
+                    networkResponse = await getNetworkResponse(event.request);
                     if (networkResponse) {
                         console.log(
                             '%c HAY NETWORK RESPONSE ',
                             'background: #0f0; color: #000'
                         );
                         if (cacheResponse) {
-                            const cache = await caches.open(CACHE_NAME);
-                            event.waitUntil(
-                                cache.put(
-                                    event.request,
-                                    networkResponse.clone()
-                                )
+                            await setCacheResponse(
+                                event.request,
+                                networkResponse.clone(),
+                                CACHE_NAME,
+                                event
                             );
                         } else {
-                            event.waitUntil(
-                                setKey(
-                                    event.request.url,
-                                    networkResponse.clone(),
-                                    event
-                                )
+                            await setDBResponse(
+                                event.request.url,
+                                networkResponse.clone(),
+                                event
                             );
                         }
-                    }
-                    console.log(
-                        '%c Get data from DB ',
-                        'background: #00b6ff; color: #fff'
-                    );
-                    const DBResponse = await getKey(event.request.url);
-                    if (!cacheResponse) {
-                        if (DBResponse) {
-                            console.log(
-                                '%c DATA FROM DB AVAILABLE [' +
-                                    event.request.url +
-                                    '] ',
-                                'background: #0f0; color: #000'
-                            );
-                        } else {
-                            console.log(
-                                '%c THERE IS NO DATA FROM DB [' +
-                                    event.request.url +
-                                    '] ',
-                                'background: #f00; color: #ff0'
-                            );
-                        }
-                    } else {
-                        console.log(
-                            '%c DATA FROM CACHE AVAILABLE [' +
-                                event.request.url +
-                                '] ',
-                            'background: #0f0; color: #000'
-                        );
                     }
                     console.log(
                         '%cXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
                         'background: #000; color: #fff'
                     );
-                    return networkResponse || DBResponse || cacheResponse;
+                    return networkResponse;
                 } else {
                     console.log(
                         '%c INDEXED_DB NOT SUPPORTED ',
@@ -232,16 +230,18 @@ async function withStore(type, callback) {
 async function getKey(key) {
     let req;
     console.log('%c READING DATA... ', 'background: #ff0; color: #000');
-    await withStore('readonly', store => {
-        req = store.get(key);
+    return new Promise((resolve, reject) => {
+        withStore('readonly', store => {
+            req = store.get(key);
+            resolve(req.result);
+        });
     });
-    return req.result;
 }
 
 async function setKey(key, value, event) {
     console.log('%c SETTING DATA... ', 'background: #ff0; color: #000');
     let dataToStore = value.clone();
-    return new Promise(resolve => {
+    return new Promise((resolve, reject) => {
         dataToStore
             .json()
             .then(data => {
@@ -258,9 +258,14 @@ async function setKey(key, value, event) {
                 resolve(tx.complete);
             })
             .catch(error => {
-                caches.open(CACHE_NAME).then(cache => {
-                    resolve(cache.put(event.request, value));
-                });
+                caches
+                    .open(CACHE_NAME)
+                    .then(cache => {
+                        resolve(cache.put(event.request, value));
+                    })
+                    .catch(error => {
+                        reject();
+                    });
             });
     });
 }
@@ -286,4 +291,59 @@ async function cacheStore(cacheName, event) {
 
     const cachedResponse = await cache.match(event.request);
     return networkResponse || cachedResponse;
+}
+
+async function getCacheResponse(key) {
+    return new Promise((resolve, reject) => {
+        caches
+            .match(key)
+            .then(function(response) {
+                console.log(
+                    '%c FILE FROM CACHE => ' +
+                        key.url +
+                        ' [' +
+                        !!response +
+                        '] ',
+                    'background: #0f0; color: #000'
+                );
+                resolve(response);
+            })
+            .catch(error => {
+                console.error(error);
+                reject();
+            });
+    });
+}
+
+async function getNetworkResponse(key) {
+    return new Promise((resolve, reject) => {
+        fetch(key)
+            .then(response => {
+                console.log(
+                    '%c FILE FROM INTERNET => ' +
+                        key.url +
+                        ' [' +
+                        !!response +
+                        '] ',
+                    'background: #0f0; color: #000'
+                );
+                resolve(response);
+            })
+            .catch(error => {
+                console.log(
+                    '%c NO INTERNEEEEEEEETTT ',
+                    'background: #f00; color: #000'
+                );
+                reject();
+            });
+    });
+}
+
+async function setCacheResponse(key, value, cacheName, event) {
+    const cache = await caches.open(cacheName);
+    event.waitUntil(cache.put(key, value));
+}
+
+async function setDBResponse(key, value, event) {
+    event.waitUntil(setKey(key, value, event));
 }
