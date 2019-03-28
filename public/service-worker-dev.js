@@ -9,6 +9,7 @@ var filesToCache = ['/', '/index.html', '/favicon.ico', '/manifest.json'];
 
 var INDEXEDDB_NAME = 'dhis2-dashboard-data';
 var db;
+var useIndexDB = false;
 
 // Delete old caches that are not our current one!
 self.addEventListener('activate', event => {
@@ -65,7 +66,6 @@ self.addEventListener('install', function(event) {
                     '%c [Service Worker] Listed Files Cached ',
                     'background: #aaa; color: #fff'
                 );
-                // });
             })
         );
     }
@@ -73,174 +73,132 @@ self.addEventListener('install', function(event) {
 
 // When the webpage goes to fetch files, we intercept that request and serve up the matching files
 // if we have them
-self.addEventListener('fetch', fetchListener);
+self.addEventListener('fetch', event => {
+    console.log('WORKER: fetch event in progress.');
 
-function fetchListener(event) {
-    let isCacheable =
-        event.request.method !== 'POST' &&
-        event.request.url.indexOf('http') === 0;
-
-    if (self.indexedDB) {
-        console.log('%c INDEXED_DB ', 'background: #b600ff; color: #fff');
-
-        event.respondWith(
-            fetch(event.request)
-                .then(async function(response) {
-                    let response2 = response.clone();
-                    if (isCacheable) {
-                        await setDBResponse(
-                            event.request.url,
-                            response.clone(),
-                            event
-                        );
-                    }
-                    return response2;
-                })
-                .catch(function() {
-                    console.log(
-                        '%c FETCH HA FALLADO ',
-                        'background: #b600ff; color: #fff',
-                        event.request
-                    );
-                    return caches
-                        .match(event.request)
-                        .then(function(response) {
-                            return response.clone();
-                        })
-                        .catch(function() {
-                            console.log('no hay internet y no hay caché');
-                            return new Response();
-                        });
-                })
-        );
-    } else {
+    /* We should only cache GET requests, and deal with the rest of method in the
+       client-side, by handling failed POST,PUT,PATCH,etc. requests.
+    */
+    if (event.request.method !== 'GET') {
+        /* If we don't block the event as shown below, then the request will go to
+           the network as usual.
+        */
         console.log(
-            '%c INDEXED_DB NOT SUPPORTED ',
-            'background: #b600ff; color: #fff'
+            'WORKER: fetch event ignored.',
+            event.request.method,
+            event.request.url
         );
-        event.respondWith(
-            fetch(event.request)
-                .then(async function(response) {
-                    if (isCacheable) {
-                        await setCacheResponse(
-                            event.request,
-                            response.clone(),
-                            CACHE_NAME,
-                            event
-                        );
-                    }
-                    return response;
-                })
-                .catch(function() {
-                    return caches.match(event.request);
-                })
-        );
+        return;
     }
-}
+    /* Similar to event.waitUntil in that it blocks the fetch event on a promise.
+       Fulfillment result will be used as the response, and rejection will end in a
+       HTTP response indicating failure.
+    */
+    event.respondWith(
+        caches
+            /* This method returns a promise that resolves to a cache entry matching
+           the request. Once the promise is settled, we can then provide a response
+           to the fetch request.
+        */
+            .match(event.request)
+            .then(function(cached) {
+                /* Even if the response is in our cache, we go to the network as well.
+                   This pattern is known for producing "eventually fresh" responses,
+                   where we return cached responses immediately, and meanwhile pull
+                   a network response and store that in the cache.
+                   Read more:
+                   https://ponyfoo.com/articles/progressive-networking-serviceworker
+                */
+                let networked = fetch(event.request)
+                    // We handle the network request with success and failure scenarios.
+                    .then(fetchedFromNetwork, unableToResolve)
+                    // We should catch errors on the fetchedFromNetwork handler as well.
+                    .catch(unableToResolve);
 
-function fetchListenerOld(event) {
-    if (
-        doCache &&
-        event.request.url.indexOf('http') === 0 &&
-        !(event.request.method === 'POST')
-    ) {
-        let isOnline = false;
-        let networkResponse = null;
-        let cacheResponse = null;
-        let DBResponse = null;
-        console.log(
-            '%c [Service Worker] Fetch [' + event.request.url + '] ',
-            'background: #aaa; color: #fff'
-        );
-        event.respondWith(
-            (async function() {
-                if (self.indexedDB) {
-                    cacheResponse = await getCacheResponse(event.request);
-                    if (cacheResponse) {
-                        networkResponse = await getNetworkResponse(
-                            event.request
-                        );
-                        if (networkResponse) {
-                            await setCacheResponse(
-                                event.request,
-                                networkResponse.clone(),
-                                CACHE_NAME,
-                                event
-                            );
-                        }
-                        return networkResponse || cacheResponse;
-                    } else {
-                        console.log(
-                            '%c THERE IS NO DATA FROM CACHE [' +
-                                event.request.url +
-                                '] ',
-                            'background: #f00; color: #ff0'
-                        );
-                        DBResponse = await getKey(event.request.url);
-                        if (DBResponse) {
-                            console.log(
-                                '%c DATA FROM DB AVAILABLE [' +
-                                    event.request.url +
-                                    '] ',
-                                'background: #0f0; color: #000'
-                            );
-                            networkResponse = await getNetworkResponse(
-                                event.request
-                            );
-                            if (networkResponse) {
-                                await setDBResponse(
-                                    event.request.url,
-                                    networkResponse.clone(),
-                                    event
-                                );
-                            }
-                            return networkResponse || DBResponse;
-                        } else {
-                            console.log(
-                                '%c THERE IS NO DATA FROM DB [' +
-                                    event.request.url +
-                                    '] ',
-                                'background: #f00; color: #ff0'
-                            );
-                            networkResponse = await getNetworkResponse(
-                                event.request
-                            );
-                            if (networkResponse) {
-                                console.log(
-                                    '%c HAY NETWORK RESPONSE ',
-                                    'background: #0f0; color: #000'
-                                );
-                                if (cacheResponse) {
-                                    await setCacheResponse(
-                                        event.request,
-                                        networkResponse.clone(),
-                                        CACHE_NAME,
-                                        event
-                                    );
-                                } else {
-                                    await setDBResponse(
-                                        event.request.url,
-                                        networkResponse.clone(),
-                                        event
-                                    );
-                                }
-                            }
-                            console.log(
-                                '%cXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
-                                'background: #000; color: #fff'
-                            );
-                            return networkResponse;
-                        }
-                    }
-                } else {
+                /* We return the cached response immediately if there is one, and fall
+                   back to waiting on the network as usual.
+                */
+                console.log(
+                    'WORKER: fetch event',
+                    cached ? '(cached)' : '(network)',
+                    event.request.url
+                );
+                return cached || networked;
+
+                function fetchedFromNetwork(response) {
+                    /* We copy the response before replying to the network request.
+                       This is the response that will be stored on the ServiceWorker cache.
+                    */
+                    let cacheCopy = response.clone();
+
                     console.log(
-                        '%c INDEXED_DB NOT SUPPORTED ',
-                        'background: #b600ff; color: #fff'
+                        'WORKER: fetch response from network.',
+                        event.request.url
                     );
-                    return cacheStore(DATA_CACHE_NAME, event);
+
+                    saveResponseToCache(event, cacheCopy);
+
+                    // Return the response so that the promise is settled in fulfillment.
+                    return response;
                 }
-            })()
-        );
+
+                /* When this method is called, it means we were unable to produce a response
+                   from either the cache or the network. This is our opportunity to produce
+                   a meaningful response even when all else fails. It's the last chance, so
+                   you probably want to display a "Service Unavailable" view or a generic
+                   error response.
+                */
+                function unableToResolve() {
+                    /* There's a couple of things we can do here.
+                       - Test the Accept header and then return one of the `offlineFundamentals`
+                         e.g: `return caches.match('/some/cached/image.png')`
+                       - You should also consider the origin. It's easier to decide what
+                         "unavailable" means for requests against your origins than for requests
+                         against a third party, such as an ad provider
+                       - Generate a Response programmaticaly, as shown below, and return that
+                    */
+
+                    console.log(
+                        'WORKER: fetch request failed in both cache and network.'
+                    );
+
+                    /* Here we're creating a response programmatically. The first parameter is the
+                       response body, and the second one defines the options for the response.
+                    */
+                    return new Response('<h1>Service Unavailable</h1>', {
+                        status: 503,
+                        statusText: 'Service Unavailable',
+                        headers: new Headers({
+                            'Content-Type': 'text/html',
+                        }),
+                    });
+                }
+            })
+    );
+});
+
+async function saveResponseToCache(event, cacheCopy) {
+    if (useIndexDB && self.indexedDB) {
+        console.log('guardando respuesta en indexedDB', event.request.url);
+        await setKey(event.request.url, cacheCopy.clone(), event);
+    } else {
+        console.log('guardando respuesta en CACHE', event.request.url);
+        caches
+            // We open a cache to store the response for this request.
+            .open(DATA_CACHE_NAME)
+            .then(function add(cache) {
+                /* We store the response for this request. It'll later become
+               available to caches.match(event.request) calls, when looking
+               for cached responses.
+            */
+                cache.put(event.request, cacheCopy);
+            })
+            .then(function() {
+                console.log(
+                    'WORKER: fetch response stored in cache.',
+                    event.request.url
+                );
+            });
     }
 }
 
@@ -328,76 +286,4 @@ function deleteKey(key) {
     return withStore('readwrite', store => {
         store.delete(key);
     });
-}
-
-async function cacheStore(cacheName, event) {
-    const cache = await caches.open(cacheName);
-    const networkResponse = await fetch(event.request).catch(() => {
-        console.log(
-            '%c NO INTERNEEEEEEEETTT ',
-            'background: #f00; color: #000'
-        );
-    });
-
-    if (networkResponse) {
-        event.waitUntil(cache.put(event.request, networkResponse.clone()));
-    }
-
-    const cachedResponse = await cache.match(event.request);
-    return networkResponse || cachedResponse;
-}
-
-async function getCacheResponse(key) {
-    return new Promise((resolve, reject) => {
-        caches
-            .match(key)
-            .then(function(response) {
-                console.log(
-                    '%c FILE FROM CACHE => ' +
-                        key.url +
-                        ' [' +
-                        !!response +
-                        '] ',
-                    'background: #0f0; color: #000'
-                );
-                resolve(response);
-            })
-            .catch(error => {
-                console.error(error);
-                reject();
-            });
-    });
-}
-
-async function getNetworkResponse(key) {
-    return new Promise((resolve, reject) => {
-        fetch(key)
-            .then(response => {
-                console.log(
-                    '%c FILE FROM INTERNET => ' +
-                        key.url +
-                        ' [' +
-                        !!response +
-                        '] ',
-                    'background: #0f0; color: #000'
-                );
-                resolve(response);
-            })
-            .catch(error => {
-                console.log(
-                    '%c NO INTERNEEEEEEEETTT ',
-                    'background: #f00; color: #000'
-                );
-                reject();
-            });
-    });
-}
-
-async function setCacheResponse(key, value, cacheName, event) {
-    const cache = await caches.open(cacheName);
-    event.waitUntil(cache.put(key, value));
-}
-
-async function setDBResponse(key, value, event) {
-    event.waitUntil(setKey(key, value, event));
 }
