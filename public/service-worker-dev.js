@@ -73,7 +73,72 @@ self.addEventListener('install', function(event) {
 
 // When the webpage goes to fetch files, we intercept that request and serve up the matching files
 // if we have them
-self.addEventListener('fetch', function(event) {
+self.addEventListener('fetch', fetchListener);
+
+function fetchListener(event) {
+    let isCacheable =
+        event.request.method !== 'POST' &&
+        event.request.url.indexOf('http') === 0;
+
+    if (self.indexedDB) {
+        console.log('%c INDEXED_DB ', 'background: #b600ff; color: #fff');
+
+        event.respondWith(
+            fetch(event.request)
+                .then(async function(response) {
+                    let response2 = response.clone();
+                    if (isCacheable) {
+                        await setDBResponse(
+                            event.request.url,
+                            response.clone(),
+                            event
+                        );
+                    }
+                    return response2;
+                })
+                .catch(function() {
+                    console.log(
+                        '%c FETCH HA FALLADO ',
+                        'background: #b600ff; color: #fff',
+                        event.request
+                    );
+                    return caches
+                        .match(event.request)
+                        .then(function(response) {
+                            return response.clone();
+                        })
+                        .catch(function() {
+                            console.log('no hay internet y no hay caché');
+                            return new Response();
+                        });
+                })
+        );
+    } else {
+        console.log(
+            '%c INDEXED_DB NOT SUPPORTED ',
+            'background: #b600ff; color: #fff'
+        );
+        event.respondWith(
+            fetch(event.request)
+                .then(async function(response) {
+                    if (isCacheable) {
+                        await setCacheResponse(
+                            event.request,
+                            response.clone(),
+                            CACHE_NAME,
+                            event
+                        );
+                    }
+                    return response;
+                })
+                .catch(function() {
+                    return caches.match(event.request);
+                })
+        );
+    }
+}
+
+function fetchListenerOld(event) {
     if (
         doCache &&
         event.request.url.indexOf('http') === 0 &&
@@ -177,7 +242,7 @@ self.addEventListener('fetch', function(event) {
             })()
         );
     }
-});
+}
 
 function getDB() {
     if (!db) {
