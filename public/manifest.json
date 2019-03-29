@@ -13,7 +13,7 @@
       "type": "image/png"
     }
   ],
-  "start_url": "/",
+  "start_url": "https://play.dhis2.org/android-dev/dhis-web-dashboard/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#1d5288"
