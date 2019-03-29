@@ -9,7 +9,7 @@ var filesToCache = ['/', '/index.html', '/favicon.ico', '/manifest.json'];
 
 var INDEXEDDB_NAME = 'dhis2-dashboard-data';
 var db;
-var useIndexDB = false;
+var useIndexDB = true;
 
 // Delete old caches that are not our current one!
 self.addEventListener('activate', event => {
@@ -165,20 +165,47 @@ self.addEventListener('fetch', event => {
                     /* Here we're creating a response programmatically. The first parameter is the
                        response body, and the second one defines the options for the response.
                     */
-                    return new Response('<h1>Service Unavailable</h1>', {
-                        status: 503,
-                        statusText: 'Service Unavailable',
-                        headers: new Headers({
-                            'Content-Type': 'text/html',
-                        }),
-                    });
+                    let unavailable = new Response(
+                        '<h1>Service Unavailable</h1>',
+                        {
+                            status: 503,
+                            statusText: 'Service Unavailable',
+                            headers: new Headers({
+                                'Content-Type': 'text/html',
+                            }),
+                        }
+                    );
+
+                    if (useIndexDB) {
+                        console.log(
+                            'fetching from IndexedDB',
+                            event.request.url
+                        );
+                        return readtheDatafromIndexedDb(
+                            INDEXEDDB_NAME,
+                            'dhis2',
+                            event.request.url
+                        )
+                            .then(function(response) {
+                                console.log('Respuesta de IndexedDB');
+                                return response;
+                            })
+                            .catch(error => {
+                                console.log('IndexedDB key unavailable');
+                                return unavailable;
+                            });
+                    } else {
+                        return unavailable;
+                    }
                 }
             })
     );
 });
 
 async function saveResponseToCache(event, cacheCopy) {
-    if (useIndexDB && self.indexedDB) {
+    let isFile = event.request.url.indexOf('js') > 0;
+
+    if (useIndexDB && self.indexedDB && !isFile) {
         console.log('guardando respuesta en indexedDB', event.request.url);
         await setKey(event.request.url, cacheCopy.clone(), event);
     } else {
@@ -240,13 +267,17 @@ async function withStore(type, callback) {
 
 async function getKey(key) {
     let req;
-    console.log('%c READING DATA... ', 'background: #ff0; color: #000');
+    console.log('%c READING DATA... ', 'background: #ff0; color: #000', key);
     return new Promise((resolve, reject) => {
         withStore('readonly', store => {
             req = store.get(key);
-        }).then(() => {
-            resolve(req.result);
-        });
+        })
+            .then(() => {
+                resolve(req.result);
+            })
+            .catch(error => {
+                reject(error);
+            });
     });
 }
 
@@ -285,5 +316,42 @@ async function setKey(key, value, event) {
 function deleteKey(key) {
     return withStore('readwrite', store => {
         store.delete(key);
+    });
+}
+
+function readtheDatafromIndexedDb(dbName, storeName, key) {
+    return new Promise((resolve, reject) => {
+        let openRequest = indexedDB.open(INDEXEDDB_NAME, 1);
+        openRequest.onupgradeneeded = function(e) {
+            let db = request.result;
+            if (!db.objectStore.contains(storeName)) {
+                db.createObjectStore(storeName, { autoIncrement: true });
+            }
+        };
+        openRequest.onsuccess = function(e) {
+            console.log('Success!');
+            db = e.target.result;
+            let transaction = db.transaction([storeName], 'readwrite');
+            let store = transaction.objectStore(storeName);
+            let request = store.get(key);
+            request.onerror = function() {
+                console.log('Error');
+                reject('unexpected error happened');
+            };
+            request.onsuccess = function(e) {
+                let result = request.result ? JSON.parse(request.result) : JSON;
+                console.log('return the respose from db', result);
+
+                resolve(
+                    new Response(result, {
+                        headers: { 'content-type': 'application/json' },
+                    })
+                );
+            };
+        };
+        openRequest.onerror = function(e) {
+            console.log('Error');
+            console.dir(e);
+        };
     });
 }
