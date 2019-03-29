@@ -9,7 +9,7 @@ var filesToCache = ['/', '/index.html', '/favicon.ico', '/manifest.json'];
 
 var INDEXEDDB_NAME = 'dhis2-dashboard-data';
 var db;
-var useIndexDB = true;
+var useIndexDB = false;
 
 // Delete old caches that are not our current one!
 self.addEventListener('activate', event => {
